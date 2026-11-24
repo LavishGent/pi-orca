@@ -1,0 +1,5 @@
+# This package uses SDK types, not its optional provider build steps.
+# Keep dependency lifecycle scripts denied rather than granting execution trust.
+allowBuilds:
+  "@google/genai": false
+  protobufjs: false

@@ -1,0 +1,66 @@
+{
+  "name": "pi-orca",
+  "version": "0.1.0",
+  "license": "MIT",
+  "author": "LavishGent",
+  "keywords": [
+    "pi-package",
+    "orca",
+    "agents"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LavishGent/pi-orca.git"
+  },
+  "homepage": "https://github.com/LavishGent/pi-orca#readme",
+  "bugs": {
+    "url": "https://github.com/LavishGent/pi-orca/issues"
+  },
+  "packageManager": "pnpm@12.21.0",
+  "files": [
+    "src",
+    "skills",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md",
+    "SECURITY.md",
+    "CONTRIBUTING.md"
+  ],
+  "private": true,
+  "type": "module",
+  "description": "Local Orca mailbox ownership, worker supervision and completion delivery for Pi.",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "scripts": {
+    "test": "node --test tests/*.test.mjs",
+    "check": "pnpm typecheck && pnpm test && pnpm check:public && pnpm format:check",
+    "format": "prettier --write src tests scripts skills .github README.md CHANGELOG.md CONTRIBUTING.md SECURITY.md package.json tsconfig.json pnpm-workspace.yaml",
+    "format:check": "prettier --check src tests scripts skills .github README.md CHANGELOG.md CONTRIBUTING.md SECURITY.md package.json tsconfig.json pnpm-workspace.yaml",
+    "check:public": "node scripts/check-public.mjs",
+    "typecheck": "tsc --noEmit"
+  },
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ],
+    "skills": [
+      "./skills"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "peerDependenciesMeta": {
+    "@earendil-works/pi-coding-agent": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@earendil-works/pi-ai": "1.5.2",
+    "@earendil-works/pi-coding-agent": "1.5.2",
+    "@types/node": "^22.20.5",
+    "prettier": "3.10.1",
+    "typescript": "6.0.3"
+  }
+}

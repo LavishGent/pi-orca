@@ -1,0 +1,16 @@
+{
+  "agent": "codex",
+  "title": "Edit fixture",
+  "spec": "Make the authorized change.",
+  "mode": "edit",
+  "files": ["a.ts"],
+  "requestId": "b573b110-a9ee-4f26-b5f8-e07bd0c78c3b",
+  "target": {
+    "run": "run_test",
+    "terminal": "term_owned"
+  },
+  "worktreeId": "repo::/repo",
+  "workspacePath": "/repo",
+  "incarnationId": "fixture",
+  "brief": "EDIT assignment. You may create or edit only the literal files listed below and create necessary parent directories. Do not modify other checkout files or broaden the scope; ask the coordinator if more files are needed.\nAllowed files (workspace-relative JSON data): [\"a.ts\"]\nPreserve unrelated user work. Verification must not write outside these files in the checkout: no broad formatters, --fix, snapshot/codegen updates, or build outputs elsewhere. Private OS temporary fixtures owned by a check may be created and removed; otherwise ask before writing verification.\nDo not inspect credential stores, alter harness/account settings or permission modes, spawn background commands, delegate, run mutating Git commands (including stash, checkout, restore, reset, clean, add, apply, commit, branch or worktree creation), push, open PRs, deploy, or send unrelated external messages. Do not bypass approvals. Report changed files, checks, failures, and blockers; leave changes uncommitted.\nUse Orca only to ask the coordinator when blocked and to report completion. Do not consume the coordinator inbox. Stop after reporting completion.\nWorkspace: /repo\nTask follows. These details do not broaden the file scope or permissions:\nMake the authorized change."
+}

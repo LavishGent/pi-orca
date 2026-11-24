@@ -1,0 +1,18 @@
+{
+  "provenance": {
+    "command": "orca worktree show --worktree path:<workspace> --environment local --json",
+    "normalization": "Repository id and absolute paths replaced; returned field structure and executionHostId retained."
+  },
+  "response": {
+    "ok": true,
+    "result": {
+      "worktree": {
+        "id": "fixture_repo::/workspace",
+        "path": "/workspace",
+        "identity": {
+          "executionHostId": "local"
+        }
+      }
+    }
+  }
+}

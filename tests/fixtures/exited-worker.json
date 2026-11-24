@@ -1,0 +1,12 @@
+{
+  "dispatchId": "ctx_test",
+  "taskId": "task_test",
+  "runId": "run_test",
+  "state": "succeeded",
+  "stage": "settled",
+  "liveness": "exited",
+  "terminal": "structworker_test",
+  "terminalState": "released",
+  "workspace": "repo::/repo",
+  "waitingOnHuman": "unknown"
+}

@@ -1,0 +1,13 @@
+node_modules/
+*.tgz
+*.log
+.env
+.env.*
+.pi/
+.DS_Store
+
+# Local development notes are not public package contents.
+PLAN.md
+AUTO_ATTACH_PLAN.md
+EDIT_MODE_PLAN.md
+RELEASE_PLAN.md
