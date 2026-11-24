@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.2.0]
+
+- Add `orca_doctor`, `/orca-doctor [agent]` and a standalone diagnostic script.
+- Locate Pi/harness executable candidates without executing them. Only Git root
+  and local Orca worktree metadata are actively requested. Report unknown
+  authentication, versions, vendor/account identity, quota and live operation.
+- Bundle optional `pi-orca-setup` guidance, official prerequisite links and an
+  explicitly authorized worker-test walkthrough. One test task may use multiple
+  billable requests; it is not run by diagnostics or skill loading.
+- Existing launch, mailbox, delivery and edit permissions remain unchanged.
+
 ## [0.1.0]
 
 First public GitHub Pi package.

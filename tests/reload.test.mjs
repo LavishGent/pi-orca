@@ -97,7 +97,9 @@ test("the actual manifest entry registers orca_inbox through the real Pi loader"
     assert.equal(schema.additionalProperties, false);
     assert.ok(result.extensions[0].tools.has("orca_launch_status"));
     assert.ok(result.extensions[0].tools.has("orca_harnesses"));
+    assert.ok(result.extensions[0].tools.has("orca_doctor"));
     assert.ok(result.extensions[0].commands.has("orca-watch"));
+    assert.ok(result.extensions[0].commands.has("orca-doctor"));
   } finally {
     clearExtensionCache();
   }

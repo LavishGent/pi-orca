@@ -10,6 +10,11 @@ Use another harness when it offers a concrete advantage. Keep small tasks in Pi.
 Honor a named harness or a request not to delegate. Do not infer spare quota from
 installation, stored authentication or an inventory hint.
 
+For prerequisite checks use `orca_doctor` or `/orca-doctor`. When the user asks
+for onboarding help, load the bundled `pi-orca-setup` skill. Diagnostics does not
+install tools or authorize a live worker test. Do not run setup during ordinary
+work unless requested.
+
 ## Before dispatch
 
 - Confirm implementation is authorized. A discussion or investigation does not

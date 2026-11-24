@@ -35,6 +35,135 @@ Do not load both a local checkout and a Git-installed copy in the same Pi
 configuration. Use `pi list` to inspect installed sources. This repository is
 public, but `private: true` intentionally prevents accidental npm publication.
 
+## Quickstart
+
+### 1. Check prerequisites
+
+You need Node, Pi, Git, local Orca and **one** chosen worker harness. You do not
+need all four harnesses, Python, mise, Docker, Google Cloud or an inventory helper.
+
+| Prerequisite           | Official installation instructions                         |
+| ---------------------- | ---------------------------------------------------------- |
+| Node 22.19+            | [nodejs.org](https://nodejs.org/en/download)               |
+| Pi                     | [pi.dev](https://pi.dev/)                                  |
+| Git                    | [git-scm.com](https://git-scm.com/downloads)               |
+| Orca app and CLI       | [Orca installation](https://www.onorca.dev/docs/install)   |
+| Claude Code, if chosen | [Claude Code setup](https://code.claude.com/docs/en/setup) |
+| Codex, if chosen       | [Codex CLI](https://developers.openai.com/codex/cli/)      |
+| Cursor, if chosen      | [Cursor CLI](https://cursor.com/docs/cli/installation)     |
+| OpenCode, if chosen    | [OpenCode documentation](https://opencode.ai/v2/docs/)     |
+
+Start Pi in an **external terminal**, not an Orca-managed terminal, at the Git
+root of a checkout already registered in Orca. Then run:
+
+```text
+/orca-doctor codex
+```
+
+Replace codex with claude, cursor or opencode. Omit it to check the shared
+prerequisites before choosing a harness. The model can call `orca_doctor` too.
+
+The check does not execute Pi or worker CLIs. It finds executable candidates,
+then requests only Git root and local Orca worktree metadata. Trusted metadata
+CLIs may perform normal logging, cache or startup I/O. Diagnostics writes no
+persistent report and does not install tools, start Orca, register repositories,
+read credentials, consume mail or make model requests. Executable presence alone
+does not verify vendor identity, versions, login, account binding or quota.
+
+| Result                | Meaning and next step                                                                                         |
+| --------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `blocked`             | A required candidate or metadata check failed. Follow the reported action; no automatic repair was attempted. |
+| `live-test-required`  | Checked prerequisites passed. Authentication and actual worker operation are still unverified.                |
+| `skipped` harness     | No harness selected. Choose one for a later worker test; this is not an all-four requirement.                 |
+| `unknown` information | Not inspected or established. Do not treat it as readiness or spare quota.                                    |
+
+Common fixes:
+
+- Missing candidate: install from the official link or correct PATH. Verify that
+  a generic `agent` executable really belongs to Cursor yourself.
+- Apple Git launcher: diagnostics does not execute the macOS installer stub.
+  With the default selection it looks for an existing Git in the standard Command
+  Line Tools or Xcode installation. If neither can be found, install developer
+  tools yourself or set `PI_ORCA_GIT` to an actual trusted Git executable. An
+  explicit override pointing to Apple's stub is refused rather than substituted.
+  This selection applies only to diagnostics. Edit validation still uses
+  `PI_ORCA_GIT` or `/usr/bin/git`; a diagnostic pass does not prove Apple's launcher
+  works or that Xcode's license has been accepted. Set `PI_ORCA_GIT` to your
+  actual trusted Git executable if both paths need the same selection.
+- Wrong directory: change to the Git worktree root, not a subdirectory.
+- Missing Orca metadata: start Orca yourself and check registration of the exact
+  existing checkout using its native guide. Do not create a replacement clone.
+- Managed/remote identity: start a genuinely external local Pi session. Do not
+  clear identity variables to disguise an Orca-managed session.
+- Unsupported version: compare your installation with the tested versions above.
+  Diagnostics intentionally does not run version commands for discovery.
+
+A standalone check is also included. From a source checkout:
+
+```sh
+node scripts/doctor.mjs --agent codex --json
+```
+
+For the default Git installation, run it at the repository you want to check:
+
+```sh
+node ~/.pi/agent/git/github.com/LavishGent/pi-orca/scripts/doctor.mjs --agent codex
+```
+
+Use the actual package directory for a custom Pi installation layout. The
+standalone script needs a Git/source installation outside `node_modules`, where
+Node can strip TypeScript. For other package layouts, use `/orca-doctor` in Pi.
+`--help`
+performs no probes. Exit 0 means checked prerequisites passed, 1 means blocked or
+cancelled, and 2 means invalid arguments. The standalone script does not load Pi
+or its extensions. In an existing Pi session, normal automatic mailbox setup may
+run independently of diagnostics. `PI_ORCA_AUTO_ATTACH=0` disables only this
+extension's automatic attachment, not effects from Pi or other extensions.
+
+### 2. Ask for setup help, if needed
+
+```text
+/skill:pi-orca-setup
+```
+
+The included skill explains the next steps for your selected harness and can
+help with changes you approve. It asks before installers, application launch,
+repository registration, PATH/skill changes or account/provider selection.
+Browser login stays under your control. Existing installations/settings are
+preserved; you can defer any step. Loading the skill is not blanket permission
+for installations or a paid test. There is no bundled installer engine or
+organization credential provisioning.
+
+### 3. Explicitly authorize a worker test
+
+After configuring and signing into your selected harness, give Pi this prompt:
+
+```text
+I authorize one read-only Orca worker test using Codex. I understand it may make
+multiple billable model requests, including Pi's report-handling turns. Use the
+configured model. Choose a unique marker and ask the worker to return it without
+inspecting repository files, running task commands or changing anything. Allow
+its native Orca completion protocol. Wait for automatic notification, then read
+orca_inbox and verify the exact task/dispatch, succeeded outcome and marker.
+Do not retry an uncertain launch or change accounts, providers or billing.
+```
+
+Choose your harness rather than assuming Codex is installed. This authorizes one
+worker task, not a fixed number of inference requests. Native harness startup can
+read its configuration. Read-only instructions are not an OS sandbox.
+
+The report body is available only after `orca_inbox`, not in the notification.
+A saved report after reload may be the first usable completion: accept it when it
+matches the pending test. Keep an already accepted test accepted when its report
+is reoffered; do not launch again. Unrelated reports do not complete the test,
+and failed/malformed reports are not success. For unknown launches, inspect the
+recorded request with `orca_launch_status` instead of resending it.
+
+Success demonstrates that one worker executed and its report returned for that
+configuration at that time. It does not prove spare quota, exact account
+binding, all harnesses or future readiness. A successful report is not proof the
+worker process has exited; use guarded native lifecycle guidance before cleanup.
+
 ## Use
 
 For example:
@@ -61,12 +190,13 @@ The model and its normal approval rules remain responsible for authorized work.
 
 ### Tools
 
-| Tool                 | Purpose                                                                          |
-| -------------------- | -------------------------------------------------------------------------------- |
-| `orca_worker_start`  | Start an authorized worker in the current owned workspace. Default is read-only. |
-| `orca_inbox`         | Read a notified report batch. No mailbox identity overrides.                     |
-| `orca_launch_status` | Reconcile a recorded launch request without starting or retrying it.             |
-| `orca_harnesses`     | Optional external inventory hints. Not needed for core operation.                |
+| Tool                 | Purpose                                                                                  |
+| -------------------- | ---------------------------------------------------------------------------------------- |
+| `orca_worker_start`  | Start an authorized worker in the current owned workspace. Default is read-only.         |
+| `orca_inbox`         | Read a notified report batch. No mailbox identity overrides.                             |
+| `orca_launch_status` | Reconcile a recorded launch request without starting or retrying it.                     |
+| `orca_harnesses`     | Optional external inventory hints. Not needed for core operation.                        |
+| `orca_doctor`        | Check prerequisite candidates and local metadata without installing or starting workers. |
 
 A scoped edit call looks like this:
 
@@ -209,7 +339,9 @@ pnpm check
 
 Tests use temporary fixtures, mock Orca responses and scripted local SDK models.
 Ordinary tests do not require Orca, access real accounts, provision mailboxes or
-make paid model requests. Optional live checks require an explicitly owned test
+make paid model requests. Onboarding report-acceptance fixtures use a scripted
+consumer; they verify transport evidence and do not prove a real model follows
+the skill. Real-model onboarding remains a separate opt-in acceptance check. Optional live checks require an explicitly owned test
 mailbox; never point them at someone else's session.
 
 Native acceptance has exercised all four harnesses for scoped writes, plus

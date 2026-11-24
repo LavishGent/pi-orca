@@ -6,7 +6,7 @@ const read = (path) => readFile(new URL(path, root), "utf8");
 
 test("GitHub Pi package declares its license, version and bundled routing skill", async () => {
   const pkg = JSON.parse(await read("package.json"));
-  assert.equal(pkg.version, "0.1.0");
+  assert.equal(pkg.version, "0.2.0");
   assert.equal(pkg.license, "MIT");
   assert.equal(pkg.private, true, "npm publication is deliberately disabled");
   assert.ok(pkg.keywords.includes("pi-package"));

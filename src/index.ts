@@ -13,6 +13,7 @@ import { CoordinatorClient, registerInventoryTool } from "./coordinator.ts";
 import { MailboxSetup } from "./mailbox-setup.ts";
 import type { MailboxInput, MailboxConnection } from "./mailbox-setup.ts";
 import { deliveryMarker } from "./mailbox-state.ts";
+import { registerDoctorTools } from "./doctor-tools.ts";
 
 interface Binding {
   target: Target;
@@ -48,6 +49,7 @@ export function createExtension(
 ): ExtensionFactory {
   return function piOrca(pi) {
     registerInventoryTool(pi, new CoordinatorClient({ env }));
+    registerDoctorTools(pi, env);
     let active = true,
       binding: Binding | undefined,
       phase: Phase = "disconnected",

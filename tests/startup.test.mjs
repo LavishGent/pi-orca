@@ -258,3 +258,192 @@ test("automatic opt-out never calls setup", () =>
     await tick();
     assert.equal(s.opens(), 0);
   }));
+
+test("doctor leaves independently waiting, connecting and connected setup untouched", () =>
+  fixture(async (s) => {
+    const gate = deferred();
+    let opens = 0,
+      reads = 0;
+    let setupSignal;
+    s.service.open = async (_input, signal) => {
+      opens++;
+      setupSignal = signal;
+      return gate.promise;
+    };
+    s.client.read = async () => {
+      reads++;
+      throw new Error("Unexpected read");
+    };
+    createExtension(
+      s.client,
+      { ORCA_TERMINAL_HANDLE: "synthetic-managed" },
+      undefined,
+      s.service,
+    )(s.pi);
+    await s.handlers.get("session_start")({ reason: "startup" }, s.ctx);
+    const doctor = () =>
+      s.tools
+        .get("orca_doctor")
+        .execute("doctor", {}, undefined, undefined, s.ctx);
+    assert.equal((await doctor()).details.status, "blocked");
+    assert.equal(opens, 0);
+    await s.handlers.get("agent_start")({}, s.ctx);
+    await tick();
+    assert.equal(opens, 1);
+    await doctor();
+    assert.equal(setupSignal.aborted, false);
+    gate.resolve(s.conn);
+    await tick();
+    await tick();
+    await doctor();
+    assert.equal(opens, 1);
+    assert.equal(s.closed(), 0);
+    assert.equal(reads, 0);
+  }));
+
+for (const scenario of [
+  "first-retained",
+  "accepted-duplicate",
+  "unrelated-retained",
+  "failed-target",
+  "malformed-target",
+]) {
+  test(`onboarding scripted consumer receives ${scenario} evidence only through retained inbox`, () =>
+    fixture(async (s) => {
+      await writeFile(s.file, "session");
+      let consumes = 0;
+      const notifications = [];
+      s.pi.sendMessage = (message) => notifications.push(message);
+      s.client.read = async () => {
+        consumes++;
+        throw new Error("Retained evidence must not consume again");
+      };
+      const pending = {
+        taskId: "task_test",
+        dispatchId: "ctx_test",
+        marker: "ONBOARDING_fixture_marker",
+      };
+      const data = {
+        taskId:
+          scenario === "unrelated-retained" ? "task_other" : pending.taskId,
+        dispatchId: pending.dispatchId,
+        outcome: scenario === "failed-target" ? "failed" : "succeeded",
+      };
+      const row = {
+        id: "msg_saved",
+        type: "worker_done",
+        run_id: "run_one",
+        to_handle: "run:run_one",
+        body: pending.marker,
+        payload:
+          scenario === "malformed-target" ? "not-json" : JSON.stringify(data),
+      };
+      s.conn.delivery = {
+        id: "receipt_saved",
+        result: { runId: "run_one", messages: [row] },
+      };
+      createExtension(s.client, {}, undefined, s.service)(s.pi);
+      await s.handlers.get("session_start")({ reason: "resume" }, s.ctx);
+      await tick();
+      await tick();
+      assert.equal(notifications.length, 1);
+      assert.ok(!notifications[0].content.includes(pending.marker));
+      const received = await s.tools
+        .get("orca_inbox")
+        .execute("saved", {}, undefined, undefined, s.ctx);
+      assert.deepEqual(received.details.messages, [row]);
+      assert.equal(consumes, 0);
+      // This scripted consumer models the skill's rule; it is not an agent-behavior guarantee.
+      const accepted = new Set(
+        scenario === "accepted-duplicate" ? [pending.taskId] : [],
+      );
+      let newlyAccepted = 0;
+      for (const message of received.details.messages) {
+        try {
+          const payload = JSON.parse(message.payload);
+          if (
+            message.type === "worker_done" &&
+            payload.taskId === pending.taskId &&
+            payload.dispatchId === pending.dispatchId &&
+            payload.outcome === "succeeded" &&
+            message.body === pending.marker &&
+            !accepted.has(pending.taskId)
+          ) {
+            accepted.add(pending.taskId);
+            newlyAccepted++;
+          }
+        } catch {}
+      }
+      assert.equal(newlyAccepted, scenario === "first-retained" ? 1 : 0);
+      assert.equal(
+        accepted.has(pending.taskId),
+        ["first-retained", "accepted-duplicate"].includes(scenario),
+      );
+    }));
+}
+
+test("successful diagnostic metadata probes coexist with waiting, connecting and watching setup", () =>
+  fixture(async (s) => {
+    const { mkdir, realpath, readFile } = await import("node:fs/promises");
+    const root = await realpath(s.dir),
+      bin = join(root, "doctor-bin"),
+      log = join(root, "probes");
+    await mkdir(bin);
+    const git = join(bin, "git-fixture"),
+      orca = join(bin, "orca-fixture");
+    await writeFile(join(bin, "pi"), "candidate only", { mode: 0o700 });
+    await writeFile(
+      git,
+      `#!${process.execPath}\nif(JSON.stringify(process.argv.slice(2))!==JSON.stringify(['rev-parse','--show-toplevel']))process.exit(2);require('node:fs').appendFileSync(${JSON.stringify(log)},'git\\n');console.log(${JSON.stringify(root)});\n`,
+      { mode: 0o700 },
+    );
+    await writeFile(
+      orca,
+      `#!${process.execPath}\nif(JSON.stringify(process.argv.slice(2))!==JSON.stringify(['worktree','show','--worktree',${JSON.stringify("path:" + root)},'--json','--environment','local']))process.exit(2);require('node:fs').appendFileSync(${JSON.stringify(log)},'orca\\n');console.log(JSON.stringify({ok:true,result:{worktree:{id:${JSON.stringify("fixture::" + root)},path:${JSON.stringify(root)},identity:{executionHostId:'local'}}}}));\n`,
+      { mode: 0o700 },
+    );
+    const gate = deferred();
+    let opens = 0,
+      reads = 0,
+      setupSignal;
+    s.service.open = async (_input, signal) => {
+      opens++;
+      setupSignal = signal;
+      return gate.promise;
+    };
+    s.client.read = async () => {
+      reads++;
+      throw new Error("Unexpected mailbox read");
+    };
+    createExtension(
+      s.client,
+      { PATH: bin, PI_ORCA_GIT: git, ORCA_CLI_COMMAND: orca },
+      undefined,
+      s.service,
+    )(s.pi);
+    await s.handlers.get("session_start")({ reason: "startup" }, s.ctx);
+    const doctor = async () => {
+      const result = await s.tools
+        .get("orca_doctor")
+        .execute("doctor", {}, undefined, undefined, s.ctx);
+      assert.equal(result.details.status, "live-test-required");
+    };
+    await doctor();
+    assert.equal(opens, 0);
+    await s.handlers.get("agent_start")({}, s.ctx);
+    await tick();
+    assert.equal(opens, 1);
+    await doctor();
+    assert.equal(setupSignal.aborted, false);
+    gate.resolve(s.conn);
+    await tick();
+    await tick();
+    await doctor();
+    assert.equal(opens, 1);
+    assert.equal(s.closed(), 0);
+    assert.equal(reads, 0);
+    assert.equal(
+      (await readFile(log, "utf8")).split("\n").filter(Boolean).length,
+      6,
+    );
+  }));
