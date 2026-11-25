@@ -190,13 +190,14 @@ The model and its normal approval rules remain responsible for authorized work.
 
 ### Tools
 
-| Tool                 | Purpose                                                                                  |
-| -------------------- | ---------------------------------------------------------------------------------------- |
-| `orca_worker_start`  | Start an authorized worker in the current owned workspace. Default is read-only.         |
-| `orca_inbox`         | Read a notified report batch. No mailbox identity overrides.                             |
-| `orca_launch_status` | Reconcile a recorded launch request without starting or retrying it.                     |
-| `orca_harnesses`     | Optional external inventory hints. Not needed for core operation.                        |
-| `orca_doctor`        | Check prerequisite candidates and local metadata without installing or starting workers. |
+| Tool                   | Purpose                                                                                  |
+| ---------------------- | ---------------------------------------------------------------------------------------- |
+| `orca_worker_start`    | Start an authorized worker in the current owned workspace. Default is read-only.         |
+| `orca_worktree_create` | Create a new worktree and branch; workers can then target it with `worktree`.            |
+| `orca_inbox`           | Read a notified report batch. No mailbox identity overrides.                             |
+| `orca_launch_status`   | Reconcile a recorded launch request without starting or retrying it.                     |
+| `orca_harnesses`       | Optional external inventory hints. Not needed for core operation.                        |
+| `orca_doctor`          | Check prerequisite candidates and local metadata without installing or starting workers. |
 
 A scoped edit call looks like this:
 
