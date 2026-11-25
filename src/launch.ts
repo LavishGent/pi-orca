@@ -41,8 +41,17 @@ export interface LaunchOutcome {
   failedStage?: string;
   errorCode?: string;
 }
+export interface OwnedWorktree {
+  id: string;
+  path: string;
+}
 export interface Launcher {
-  prepare(target: Target, input: unknown, cwd: string): Promise<LaunchPlan>;
+  prepare(
+    target: Target,
+    input: unknown,
+    cwd: string,
+    worktree?: OwnedWorktree,
+  ): Promise<LaunchPlan>;
   submit(plan: LaunchPlan): Promise<LaunchOutcome>;
   inspect(plan: LaunchPlan, signal?: AbortSignal): Promise<LaunchOutcome>;
   validateEdits?(
@@ -174,6 +183,58 @@ function assignmentBrief(input: LaunchInput, workspace: string): string {
   ].join("\n");
 }
 
+export interface SessionTerminal {
+  worktreeId: string;
+  worktreePath: string;
+  incarnationId: string;
+}
+/** The attached terminal must be connected, local and own this Pi session's workspace. */
+export async function verifySessionTerminal(
+  read: Runner,
+  canonical: (path: string) => Promise<string>,
+  target: Target,
+  cwd: string,
+): Promise<SessionTerminal> {
+  const response = await read([
+    "terminal",
+    "show",
+    "--terminal",
+    target.terminal,
+    "--json",
+  ]);
+  const terminal =
+    record(response) && record(response.terminal)
+      ? response.terminal
+      : undefined;
+  if (
+    !terminal ||
+    terminal.handle !== target.terminal ||
+    terminal.executionHostId !== "local" ||
+    terminal.connected !== true ||
+    !text(terminal.worktreeId, 4096) ||
+    !terminal.worktreeId.includes("::") ||
+    !text(terminal.worktreePath, 4096) ||
+    !text(terminal.incarnationId, 256) ||
+    !isAbsolute(terminal.worktreePath) ||
+    !isAbsolute(
+      terminal.worktreeId.slice(terminal.worktreeId.indexOf("::") + 2),
+    ) ||
+    (await canonical(terminal.worktreePath)) !== (await canonical(cwd)) ||
+    (await canonical(
+      terminal.worktreeId.slice(terminal.worktreeId.indexOf("::") + 2),
+    )) !== (await canonical(cwd))
+  ) {
+    throw new Error(
+      "The attached terminal must own the same existing local workspace as this Pi session.",
+    );
+  }
+  return {
+    worktreeId: terminal.worktreeId,
+    worktreePath: terminal.worktreePath,
+    incarnationId: terminal.incarnationId,
+  };
+}
+
 export class WorkerLauncher implements Launcher {
   private readonly read: Runner;
   private readonly mutate: (
@@ -210,54 +271,30 @@ export class WorkerLauncher implements Launcher {
     target: Target,
     input: unknown,
     cwd: string,
+    worktree?: OwnedWorktree,
   ): Promise<LaunchPlan> {
     const values = parseLaunchInput(input);
     assertLocalCaller(this.env);
     await new OrcaClient(this.read).verify(target);
-    const response = await this.read([
-      "terminal",
-      "show",
-      "--terminal",
-      target.terminal,
-      "--json",
-    ]);
-    const terminal =
-      record(response) && record(response.terminal)
-        ? response.terminal
-        : undefined;
-    if (
-      !terminal ||
-      terminal.handle !== target.terminal ||
-      terminal.executionHostId !== "local" ||
-      terminal.connected !== true ||
-      !text(terminal.worktreeId, 4096) ||
-      !terminal.worktreeId.includes("::") ||
-      !text(terminal.worktreePath, 4096) ||
-      !text(terminal.incarnationId, 256) ||
-      !isAbsolute(terminal.worktreePath) ||
-      !isAbsolute(
-        terminal.worktreeId.slice(terminal.worktreeId.indexOf("::") + 2),
-      ) ||
-      (await this.canonical(terminal.worktreePath)) !==
-        (await this.canonical(cwd)) ||
-      (await this.canonical(
-        terminal.worktreeId.slice(terminal.worktreeId.indexOf("::") + 2),
-      )) !== (await this.canonical(cwd))
-    ) {
-      throw new Error(
-        "The attached terminal must own the same existing local workspace as this Pi session.",
-      );
-    }
+    const terminal = await verifySessionTerminal(
+      this.read,
+      this.canonical,
+      target,
+      cwd,
+    );
+    const place = worktree
+      ? await this.verifyOwnedWorktree(terminal.worktreeId, worktree)
+      : { id: terminal.worktreeId, path: terminal.worktreePath };
     const workspacePath =
-      values.mode === "edit"
-        ? await this.canonical(terminal.worktreePath)
-        : terminal.worktreePath;
+      values.mode === "edit" || worktree
+        ? await this.canonical(place.path)
+        : place.path;
     const brief = assignmentBrief(values, workspacePath);
     const plan: LaunchPlan = {
       ...values,
       requestId: randomUUID(),
       target: { ...target },
-      worktreeId: terminal.worktreeId,
+      worktreeId: place.id,
       workspacePath,
       incarnationId: terminal.incarnationId,
       brief,
@@ -265,6 +302,49 @@ export class WorkerLauncher implements Launcher {
     if (!validPlan(plan))
       throw new Error("Prepared launch plan exceeds its bounds or is invalid.");
     return plan;
+  }
+  // An owned worktree was created by this session. Orca must still report it
+  // live, local, non-bare, unarchived, in the session's repository and at the
+  // recorded path before a worker is placed there.
+  private async verifyOwnedWorktree(
+    sessionWorktreeId: string,
+    owned: OwnedWorktree,
+  ): Promise<OwnedWorktree> {
+    const repo = (id: string) => id.slice(0, id.indexOf("::"));
+    const fail = () =>
+      new Error(
+        "The named worktree is not a live, local worktree of this session's repository at its recorded path.",
+      );
+    if (
+      !owned.id.includes("::") ||
+      repo(owned.id) !== repo(sessionWorktreeId) ||
+      !isAbsolute(owned.path)
+    )
+      throw fail();
+    const response = await this.read([
+      "worktree",
+      "show",
+      "--worktree",
+      `id:${owned.id}`,
+      "--json",
+    ]);
+    const found =
+      record(response) && record(response.worktree)
+        ? response.worktree
+        : undefined;
+    if (
+      !found ||
+      found.id !== owned.id ||
+      found.repoId !== repo(owned.id) ||
+      found.hostId !== "local" ||
+      found.isBare === true ||
+      found.isArchived === true ||
+      typeof found.path !== "string" ||
+      !isAbsolute(found.path) ||
+      (await this.canonical(found.path)) !== (await this.canonical(owned.path))
+    )
+      throw fail();
+    return { id: found.id, path: found.path };
   }
   async validateEdits(
     plan: LaunchPlan,

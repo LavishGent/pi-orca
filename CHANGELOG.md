@@ -1,5 +1,13 @@
 # Changelog
 
+## [Unreleased]
+
+- Add `orca_worktree_create`: one new Orca worktree and branch in the session's
+  repository, with setup skipped and no parent. Journaled before and after.
+- `orca_worker_start` accepts `worktree`, the name of a worktree this session
+  created. Orca must report it live, local, non-bare and in the same repository.
+  Existing read-only and edit rules apply unchanged inside it.
+
 ## [0.2.0]
 
 - Add `orca_doctor`, `/orca-doctor [agent]` and a standalone diagnostic script.

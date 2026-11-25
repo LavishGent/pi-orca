@@ -283,3 +283,53 @@ test("canonical placement accepts matching symlinks and rejects mismatching ones
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+const owned = { id: "repo::/wt/feature", path: "/wt/feature" };
+const liveWorktree = {
+  id: owned.id,
+  repoId: "repo",
+  hostId: "local",
+  path: owned.path,
+  isBare: false,
+  isArchived: false,
+};
+
+test("an owned worktree is verified live before it becomes the workspace", async () => {
+  const f = fixture([owner, { terminal }, { worktree: liveWorktree }]);
+  const p = await f.launcher.prepare(target, input, "/repo", owned);
+  assert.equal(p.worktreeId, owned.id);
+  assert.equal(p.workspacePath, owned.path);
+  assert.ok(p.brief.includes("Workspace: /wt/feature"));
+  assert.ok(f.calls[2].includes("worktree"));
+  assert.ok(f.calls[2].includes(`id:${owned.id}`));
+  assert.equal(f.mutations.length, 0);
+});
+
+test("an owned worktree that is foreign, stale or unsafe is refused", async () => {
+  for (const [worktree, live] of [
+    [{ ...owned, id: "other::/wt/feature" }, liveWorktree],
+    [{ ...owned, path: "relative" }, liveWorktree],
+    [owned, { ...liveWorktree, id: "repo::/wt/else" }],
+    [owned, { ...liveWorktree, repoId: "other" }],
+    [owned, { ...liveWorktree, hostId: "remote" }],
+    [owned, { ...liveWorktree, isBare: true }],
+    [owned, { ...liveWorktree, isArchived: true }],
+    [owned, { ...liveWorktree, path: "/wt/moved" }],
+  ]) {
+    const f = fixture([owner, { terminal }, { worktree: live }]);
+    await assert.rejects(
+      f.launcher.prepare(target, input, "/repo", worktree),
+      /worktree/i,
+    );
+    assert.equal(f.mutations.length, 0);
+  }
+});
+
+test("the session terminal must still own the session workspace when a worktree is named", async () => {
+  const f = fixture([
+    owner,
+    { terminal: { ...terminal, worktreePath: "/other" } },
+  ]);
+  await assert.rejects(f.launcher.prepare(target, input, "/repo", owned));
+  assert.equal(f.calls.length, 2);
+});

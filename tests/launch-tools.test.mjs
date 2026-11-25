@@ -53,7 +53,7 @@ function setup(records = [], overrides = {}, env = {}) {
       assert.ok(
         records.some(
           (row) =>
-            row.data?.plan.requestId === p.requestId &&
+            row.data?.plan?.requestId === p.requestId &&
             row.data.status === "pending",
         ),
         "Journal must precede mutation",
@@ -327,4 +327,189 @@ test("a separate session file has a separate launch journal and no cross-session
   assert.equal(separate.counts().submits, 1);
   original.handlers.get("session_shutdown")();
   separate.handlers.get("session_shutdown")();
+});
+
+function attachedWithWorktree(records, creator) {
+  const s = setup(records, {
+    async prepare(target, _input, _cwd, worktree) {
+      s.prepared.push(worktree);
+      return {
+        ...plan(target),
+        ...(worktree
+          ? { worktreeId: worktree.id, workspacePath: worktree.path }
+          : {}),
+      };
+    },
+  });
+  s.prepared = [];
+  return s;
+}
+const readyWorktree = {
+  type: "custom",
+  customType: "orca-worktree-journal",
+  data: {
+    version: 1,
+    name: "feat-auth",
+    status: "ready",
+    record: {
+      name: "feat-auth",
+      branch: "feat/auth",
+      id: "repo::/wt/feat-auth",
+      path: "/wt/feat-auth",
+    },
+  },
+};
+
+test("worker start can target a worktree this session created", async () => {
+  const records = [structuredClone(readyWorktree)];
+  const s = attachedWithWorktree(records);
+  await s.attach();
+  await tick();
+  const result = await s.tools
+    .get("orca_worker_start")
+    .execute(
+      "c",
+      { ...input, worktree: "feat-auth" },
+      undefined,
+      undefined,
+      s.ctx,
+    );
+  assert.equal(result.isError, undefined);
+  assert.deepEqual(s.prepared, [
+    { id: "repo::/wt/feat-auth", path: "/wt/feat-auth" },
+  ]);
+  s.handlers.get("session_shutdown")();
+});
+
+test("worker start refuses worktrees this session did not create", async () => {
+  const unconfirmed = structuredClone(readyWorktree);
+  unconfirmed.data.status = "unconfirmed";
+  for (const [records, name] of [
+    [[], "feat-auth"],
+    [[unconfirmed], "feat-auth"],
+    [[structuredClone(readyWorktree)], "other"],
+    [[structuredClone(readyWorktree)], 7],
+  ]) {
+    const s = attachedWithWorktree(records);
+    await s.attach();
+    await tick();
+    const result = await s.tools
+      .get("orca_worker_start")
+      .execute("c", { ...input, worktree: name }, undefined, undefined, s.ctx);
+    assert.equal(result.isError, true);
+    assert.equal(s.counts().prepares, 0);
+    assert.equal(s.counts().submits, 0);
+    s.handlers.get("session_shutdown")();
+  }
+});
+
+function withCreator(records, outcome) {
+  const calls = [];
+  const tools = new Map(),
+    handlers = new Map(),
+    commands = new Map();
+  const ctx = {
+    cwd: "/repo",
+    ui: { notify() {} },
+    sessionManager: {
+      getSessionId: () => "session-test",
+      getSessionFile: () => "/session.jsonl",
+      getEntries: () => records,
+    },
+  };
+  createExtension(
+    { verify: async () => {}, peek: async () => new Promise(() => {}) },
+    {},
+    {
+      prepare: async () => plan(),
+      submit: async () => outcome,
+      inspect: async () => outcome,
+    },
+    undefined,
+    {
+      async create(...args) {
+        calls.push(args);
+        return outcome;
+      },
+    },
+  )({
+    on: (n, h) => handlers.set(n, h),
+    registerTool: (t) => tools.set(t.name, t),
+    registerCommand: (n, c) => commands.set(n, c),
+    appendEntry: (customType, data) =>
+      records.push({ type: "custom", customType, data: structuredClone(data) }),
+    sendMessage() {},
+  });
+  return {
+    calls,
+    handlers,
+    attach: () =>
+      commands.get("orca-watch").handler("attach run_test term_owned", ctx),
+    create: (params) =>
+      tools
+        .get("orca_worktree_create")
+        .execute("c", params, undefined, undefined, ctx),
+  };
+}
+
+test("worktree creation journals before and after, and grants ownership only when ready", async () => {
+  const records = [];
+  const record = {
+    name: "feat-auth",
+    branch: "feat/auth",
+    id: "repo::/wt/feat-auth",
+    path: "/wt/feat-auth",
+  };
+  const s = withCreator(records, {
+    status: "ready",
+    name: "feat-auth",
+    record,
+  });
+  const params = { name: "feat-auth", branch: "feat/auth" };
+  assert.equal((await s.create(params)).isError, true);
+  await s.attach();
+  await tick();
+  const result = await s.create(params);
+  assert.equal(result.isError, undefined);
+  assert.deepEqual(
+    records.map((r) => r.data.status),
+    ["pending", "ready"],
+  );
+  assert.deepEqual(records[1].data.record, record);
+  // The name is single use, so a repeat never reaches Orca.
+  assert.equal((await s.create(params)).isError, true);
+  assert.equal(s.calls.length, 1);
+  s.handlers.get("session_shutdown")();
+});
+
+test("an unconfirmed creation is an error, grants nothing and is not resent", async () => {
+  const records = [];
+  const s = withCreator(records, {
+    status: "unconfirmed",
+    name: "x",
+    errorCode: "deadline",
+  });
+  await s.attach();
+  await tick();
+  const result = await s.create({ name: "x", branch: "feat/x" });
+  assert.equal(result.isError, true);
+  assert.deepEqual(
+    records.map((r) => r.data.status),
+    ["pending", "unconfirmed"],
+  );
+  assert.equal((await s.create({ name: "x", branch: "feat/x" })).isError, true);
+  assert.equal(s.calls.length, 1);
+  s.handlers.get("session_shutdown")();
+});
+
+test("invalid worktree input never journals or calls Orca", async () => {
+  const records = [];
+  const s = withCreator(records, { status: "ready", name: "x" });
+  await s.attach();
+  await tick();
+  const result = await s.create({ name: "x", branch: "--bad" });
+  assert.equal(result.isError, true);
+  assert.equal(records.length, 0);
+  assert.equal(s.calls.length, 0);
+  s.handlers.get("session_shutdown")();
 });

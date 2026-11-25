@@ -9,6 +9,9 @@ import { watchOnce } from "./watcher.ts";
 import { WorkerLauncher } from "./launch.ts";
 import type { Launcher } from "./launch.ts";
 import { registerLaunchTools } from "./launch-tools.ts";
+import { registerWorktreeTools } from "./worktree-tools.ts";
+import { WorktreeManager } from "./worktree.ts";
+import type { WorktreeCreator } from "./worktree.ts";
 import { CoordinatorClient, registerInventoryTool } from "./coordinator.ts";
 import { MailboxSetup } from "./mailbox-setup.ts";
 import type { MailboxInput, MailboxConnection } from "./mailbox-setup.ts";
@@ -46,6 +49,7 @@ export function createExtension(
   env: NodeJS.ProcessEnv = process.env,
   launcher: Launcher = new WorkerLauncher({ env }),
   setup?: MailboxSetup,
+  worktrees: WorktreeCreator = new WorktreeManager({ env }),
 ): ExtensionFactory {
   return function piOrca(pi) {
     registerInventoryTool(pi, new CoordinatorClient({ env }));
@@ -318,21 +322,18 @@ export function createExtension(
         if (binding) acknowledge(binding);
       });
     }
-    registerLaunchTools(
-      pi,
-      launcher,
-      {
-        active: () => active,
-        get: () =>
-          binding &&
-          current(binding) &&
-          (phase === "watching" || phase === "notified")
-            ? binding
-            : undefined,
-        ...(setup ? { ready: waitForSetup } : {}),
-      },
-      env,
-    );
+    const launchAccess = {
+      active: () => active,
+      get: () =>
+        binding &&
+        current(binding) &&
+        (phase === "watching" || phase === "notified")
+          ? binding
+          : undefined,
+      ...(setup ? { ready: waitForSetup } : {}),
+    };
+    registerLaunchTools(pi, launcher, launchAccess, env);
+    registerWorktreeTools(pi, worktrees, launchAccess);
     pi.registerTool({
       name: "orca_inbox",
       label: "Read Orca inbox",

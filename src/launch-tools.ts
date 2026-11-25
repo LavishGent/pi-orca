@@ -12,6 +12,8 @@ import type {
 } from "./launch.ts";
 import { parseLaunchInput, validPlan } from "./launch.ts";
 import { EditSafetyError } from "./edit-scope.ts";
+import { ownedWorktrees } from "./worktree-tools.ts";
+import type { WorktreeRecord } from "./worktree.ts";
 import {
   launchEntryType,
   readLaunchJournal,
@@ -66,7 +68,7 @@ export function registerLaunchTools(
     name: "orca_worker_start",
     label: "Start scoped Orca worker",
     description:
-      "Start one user-authorized task in the owned existing local workspace. Default mode is read-only. Opt-in mode=edit requires an exact files list: clean tracked files or genuinely new files only, no existing user changes, directories, symlinks or Git metadata. Edit scopes are task instructions, not a sandbox. Prior edit workers in this session workspace must be verified exited; this does not lock other sessions, forks or Pi's own file tools. No new worktrees, arbitrary launch commands, remote placement, credential setup, commits or permission bypasses. Models/effort must be verified and authorized; no model selection here. Uncertain starts block further starts in this session file. Never resend them.",
+      "Start one user-authorized task in the owned existing local workspace, or in a worktree this session created with orca_worktree_create (optional `worktree` name). Default mode is read-only. Opt-in mode=edit requires an exact files list: clean tracked files or genuinely new files only, no existing user changes, directories, symlinks or Git metadata. Edit scopes are task instructions, not a sandbox. Prior edit workers in this session workspace must be verified exited; this does not lock other sessions, forks or Pi's own file tools. No arbitrary launch commands, remote placement, credential setup, commits or permission bypasses. Models/effort must be verified and authorized; no model selection here. Uncertain starts block further starts in this session file. Never resend them.",
     parameters: {
       type: "object",
       properties: {
@@ -76,6 +78,7 @@ export function registerLaunchTools(
         model: { type: "string" },
         effort: { type: "string" },
         mode: { type: "string", enum: ["read-only", "edit"] },
+        worktree: { type: "string" },
         files: {
           type: "array",
           items: { type: "string" },
@@ -111,8 +114,22 @@ export function registerLaunchTools(
           true,
         );
       let input: LaunchInput;
+      let owned: WorktreeRecord | undefined;
       try {
-        input = parseLaunchInput(params);
+        const { worktree, ...rest } = (params ?? {}) as Record<string, unknown>;
+        input = parseLaunchInput(rest);
+        if (worktree !== undefined) {
+          owned =
+            typeof worktree === "string"
+              ? ownedWorktrees(ctx.sessionManager.getEntries()).get(worktree)
+              : undefined;
+          if (!owned)
+            return result(
+              "The worktree must be one created by orca_worktree_create in this session and confirmed ready. No worker was started.",
+              {},
+              true,
+            );
+        }
       } catch {
         return result(
           "Invalid launch input or edit file scope. No worker was started.",
@@ -154,7 +171,12 @@ export function registerLaunchTools(
             {},
             true,
           );
-        plan = await launcher.prepare(value.target, input, ctx.cwd);
+        plan = await launcher.prepare(
+          value.target,
+          input,
+          ctx.cwd,
+          owned ? { id: owned.id, path: owned.path } : undefined,
+        );
         const verifyPreparedPlan = () => {
           if (
             !plan ||
